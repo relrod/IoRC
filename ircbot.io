@@ -3,10 +3,12 @@
 
 // Core addons. Note that Regex in steve's branch is currently broken. --6/11/10
 Regex // We're parsing with regex.
+SGML // For misc. web stuff.
 
 // Command Libraries
 Importer addSearchPath("cmdlibs")
 Morse // My morse library.
+Weather // My weather library.
 
 Bot := Object clone do (
     socket := Socket clone
@@ -41,20 +43,21 @@ Bot := Object clone do (
             socket streamReadNextChunk
             if(socket readBuffer size != 0,
                 // Send it to the parser
+                //("[RX]"..(socket readBuffer)) println
                 parse(socket readBuffer)
                 socket readBuffer empty
             )
         )
     )
     
-    parse := method(line,
+    parse := method(line,        
         // Handle PING's first off.
         if(line beginsWithSeq("PING"),
             send("PONG " .. line split(" ") at(1) strip)
             return // Done with the function.
         )
         try(
-            regex := "^:(.+)!(.+)@(.+) (.+) (.+) :(.+)" asRegex
+            regex := "^:(.+)!(.+)@(\.+?) (\.+?) (\.+?) :(.+)$" asRegex
             message := line matchesOfRegex(regex) next captures do (
                 sender := Object clone
                 sender nick := at(1)
@@ -76,10 +79,6 @@ Bot := Object clone do (
                     Bot send("PRIVMSG #{channel} :#{001 asCharacter}ACTION #{response}#{001 asCharacter}" interpolate)
                 )
             )
-        
-            if(message text beginsWithSeq(".echo"),
-                message reply(message text removeSlice(0,5), true)
-            )
             
             if(message text beginsWithSeq(".npecho"),
                 message reply(message text removeSlice(0,7), false)
@@ -97,13 +96,79 @@ Bot := Object clone do (
                 message reply(demorse(message text removeSlice(0,8)), true)
             )
             
+            if(message text beginsWithSeq("."),
+                args := message text split(" ")
+                command := args removeFirst removeAt(0);
+                argsList := list(args join(" "))
+                if(Commands hasLocalSlot(command),
+                    response := Commands performWithArgList(command, argsList)
+                    if(response != nil, message reply(response, true)),
+                    message reply("Sorry, the #{command} command was not found." interpolate)
+                )
+            )
+
             return // We have to get back to the mainloop, so we can clear the buffer.
-            
         )
     )
     
+    Commands := Object clone do (
+        
+        help := method(commandname,
+            //return self hasLocalSlot(commandname)
+            if(self hasLocalSlot(commandname),
+                return self performWithArgList(commandname, list("help")),
+                return "Sorry, the #{commandname} command was not found." interpolate
+            )
+        )
+        
+        ping := method(args,
+            help := "This method 'pong's to test the bot."
+            if(args == "help", return help)
+            return "Pong @ #{Date now}" interpolate
+        )
+        
+        echo := method(args,
+            help := "Echos <argument> to the user."
+            if(args == "help", return help)
+            return args
+        )
+        
+        countlinks := method(args,
+            sitesource := URL with(args) fetch
+            linkscount := sitesource asXML elementsWithName("a") map(attributes at("href")) size
+            return "#{args} contains #{linkscount} links" interpolate
+        )
+        
+        minify := method(args,
+            shorturl := URL with ("http://is.gd/api.php?longurl=#{args}" interpolate) fetch
+            return shorturl 
+        )
+        
+        weather := method(args,
+            weather := Weather clone
+            weather query(args)
+            weather currcond_seq
+        )
+        
+        raw := method(args,
+            help := "Sends <quote> to the IRC server, followed by \\r\\n"
+            if(args == "help", return help)
+            Bot send(args)
+            return nil
+        )
+        
+    )
+    
+    
 )
 
+// You know what would really be nice? CONCURENCY! >.<
 freenode := Bot clone
 freenode identify("irc.freenode.net",6667,"IoIRC", list("##botkiteers"))
 freenode mainloop
+
+
+//slashnet := Bot clone
+//slashnet identify("irc.slashnet.org",6667,"IoIRC", list("##botkiteers"))
+//coroDo(freenode mainloop)
+//slashnet mainloop
